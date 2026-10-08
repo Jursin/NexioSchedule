@@ -31,11 +31,14 @@ data class AppearanceStyle(
     val showClassroom: Boolean = true,
     val showTeacher: Boolean = true,
     val cardRefraction: CardRefractionLevel? = null,
-    val wallpaperBlur: Boolean = false
+    val wallpaperBlur: Boolean = false,
+    /** null=未写入（老快照），按默认启用 */
+    val showQuoteCard: Boolean? = null
 ) {
     val safeAlignment: CardContentAlignment get() = cardContentAlignment ?: CardContentAlignment.CENTER_CENTER
     val safeTextColor: CardTextColor get() = cardTextColor ?: CardTextColor.COLORFUL
     val safeRefraction: CardRefractionLevel get() = cardRefraction ?: CardRefractionLevel.DEFAULT
+    val safeShowQuoteCard: Boolean get() = showQuoteCard ?: true
 
     /** 0 一律视为损坏恢复默认（滑杆合法区间 34~92，0 会让网格整页静默空白） */
     val safeCardTextScale: Float get() = if (cardTextScale > 0f) cardTextScale else 1f

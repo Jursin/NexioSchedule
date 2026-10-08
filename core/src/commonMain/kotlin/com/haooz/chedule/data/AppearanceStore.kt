@@ -146,4 +146,7 @@ object AppearanceStore {
 
     fun getWallpaperBlur(): Boolean = currentStyle().wallpaperBlur
     fun saveWallpaperBlur(blur: Boolean) = updateStyle { it.copy(wallpaperBlur = blur) }
+
+    fun getShowQuoteCard(): Boolean = currentStyle().safeShowQuoteCard
+    fun saveShowQuoteCard(show: Boolean) = updateStyle { it.copy(showQuoteCard = show) }
 }

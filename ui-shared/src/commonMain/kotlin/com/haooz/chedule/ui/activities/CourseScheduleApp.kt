@@ -63,8 +63,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
@@ -89,8 +87,6 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.state.ToggleableState
@@ -196,7 +192,6 @@ import top.yukonga.miuix.kmp.basic.NumberPicker
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.basic.FastForward
 import top.yukonga.miuix.kmp.icon.extended.Add
 import top.yukonga.miuix.kmp.icon.extended.Background
 import top.yukonga.miuix.kmp.icon.extended.Backup
@@ -276,6 +271,7 @@ data class ScheduleCombination(
     var cardRefraction: CardRefractionLevel = CardRefractionLevel.DEFAULT,
     var wallpaperIsLight: Boolean? = null,
     var wallpaperBlur: Boolean = false,
+    var showQuoteCard: Boolean = true,
 )
 
 /** [ScheduleCombination] → 外观配置。 */
@@ -294,6 +290,7 @@ fun AppearanceConfig.Companion.fromCombination(c: ScheduleCombination): Appearan
     showTeacher = c.showTeacher,
     cardRefraction = c.cardRefraction,
     wallpaperBlur = c.wallpaperBlur,
+    showQuoteCard = c.showQuoteCard,
 )
 
 /** 设置页装配参数（宿主包装 AndroidSettingsScreen / iOS 自己的装配用）。 */
@@ -704,211 +701,6 @@ private fun ShiftLoadingOverlay(
 }
 
 @Composable
-private fun MorePopupMenus(
-    showMorePopup: Boolean,
-    onMorePopupDismiss: () -> Unit,
-    onMorePopupExpand: () -> Unit = {},
-    showTodayMorePopup: Boolean,
-    onTodayMorePopupDismiss: () -> Unit,
-    onTodayMorePopupExpand: () -> Unit = {},
-    morePopupFraction: Animatable<Float, *>,
-    todayMorePopupFraction: Animatable<Float, *>,
-    scheduleMenuOffset: () -> Offset = { Offset.Zero },
-    todayMenuOffset: () -> Offset = { Offset.Zero },
-    /** 「更多」占位槽实测顶部（root 坐标 px）；传 state 而非 Float，定位须在绘制期读，首帧才不跳。 */
-    moreSlotTopPx: MutableFloatState = mutableFloatStateOf(0f),
-    scheduleMaterialAlpha: Float = 0f,
-    todayMaterialAlpha: Float = 0f,
-    liquidGlassBackdrop: com.kyant.backdrop.Backdrop,
-    isShiftMode: Boolean = false,
-    onJumpWeek: () -> Unit,
-    onCourseManage: () -> Unit,
-    onEnterCustomize: () -> Unit,
-    onJumpToDate: () -> Unit,
-    onMoreBackProgress: (Float) -> Unit = {},
-    onMoreBackCancelled: () -> Unit = {},
-    onTodayMoreBackProgress: (Float) -> Unit = {},
-    onTodayMoreBackCancelled: () -> Unit = {},
-    // 平板右上角不显示「更多」：跳转/管理/外观都已在侧栏里
-    enabled: Boolean = true,
-) {
-    if (!enabled) {
-        // 菜单开着时切进/切出禁用场景（平板 rail、课表外观、课表切换）要强制收起，
-        // 否则展开态会盖在新页面上还能点。用 enabled 做 key，翻转即重跑。
-        LaunchedEffect(enabled) {
-            if (showMorePopup) onMorePopupDismiss()
-            if (showTodayMorePopup) onTodayMorePopupDismiss()
-        }
-        return
-    }
-    if (showMorePopup) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null
-                ) { onMorePopupDismiss() }
-        )
-    }
-    if (showTodayMorePopup) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null
-                ) { onTodayMorePopupDismiss() }
-        )
-    }
-    // 「更多」锚点纵坐标：**绘制期**定位
-    val fallbackAnchorTopPx = with(LocalDensity.current) {
-        val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-        (if (statusBarTop > 0.dp) statusBarTop - 20.dp else 17.dp)
-            .coerceAtLeast(0.dp)
-            .toPx()
-    }
-    val shadowPaddingPx = with(LocalDensity.current) {
-        com.haooz.chedule.ui.basic.LiquidGlassDropdownShadowPadding.toPx()
-    }
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .graphicsLayer {
-                clip = false
-                // moreSlotTopPx 是占位槽顶边，减掉阴影外扩才是内容顶边
-                val measured = moreSlotTopPx.floatValue - shadowPaddingPx
-                translationY = if (measured > 0f) measured else fallbackAnchorTopPx
-            }
-            .offset(x = 9.dp),
-        contentAlignment = Alignment.TopEnd
-    ) {
-        // 课程表页「更多」
-        LiquidGlassDropdownMenu(
-            show = showMorePopup,
-            backdrop = liquidGlassBackdrop,
-            fraction = morePopupFraction,
-            onDismiss = onMorePopupDismiss,
-            onBackProgress = onMoreBackProgress,
-            onBackCancelled = onMoreBackCancelled,
-            triggerIcon = MiuixIcons.More,
-            triggerContentDescription = "更多",
-            onExpand = onMorePopupExpand,
-            offsetPx = scheduleMenuOffset,
-            materialAlpha = scheduleMaterialAlpha,
-        ) {
-            LiquidGlassDropdownMenuItem(
-                text = "跳转周数",
-                onClick = {
-                    onMorePopupDismiss()
-                    onJumpWeek()
-                },
-                icon = {
-                    Icon(
-                        imageVector = MiuixIcons.Basic.FastForward,
-                        contentDescription = null,
-                        tint = MiuixTheme.colorScheme.onSurface,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-            )
-            if (!isShiftMode) {
-                LiquidGlassDropdownMenuItem(
-                    text = "课程管理",
-                    onClick = {
-                        onMorePopupDismiss()
-                        onCourseManage()
-                    },
-                    icon = {
-                        Icon(
-                            imageVector = MiuixIcons.Backup,
-                            contentDescription = null,
-                            tint = MiuixTheme.colorScheme.onSurface,
-                            modifier = Modifier.size(23.dp)
-                        )
-                    }
-                )
-            }
-            LiquidGlassDropdownMenuItem(
-                text = "课表外观",
-                onClick = {
-                    onMorePopupDismiss()
-                    onEnterCustomize()
-                },
-                icon = {
-                    Icon(
-                        imageVector = MiuixIcons.Background,
-                        contentDescription = null,
-                        tint = MiuixTheme.colorScheme.onSurface,
-                        modifier = Modifier.size(23.dp)
-                    )
-                }
-            )
-        }
-        // 今日页「更多」
-        LiquidGlassDropdownMenu(
-            show = showTodayMorePopup,
-            backdrop = liquidGlassBackdrop,
-            fraction = todayMorePopupFraction,
-            onDismiss = onTodayMorePopupDismiss,
-            onBackProgress = onTodayMoreBackProgress,
-            onBackCancelled = onTodayMoreBackCancelled,
-            triggerIcon = MiuixIcons.More,
-            triggerContentDescription = "更多",
-            onExpand = onTodayMorePopupExpand,
-            offsetPx = todayMenuOffset,
-            materialAlpha = todayMaterialAlpha,
-        ) {
-            LiquidGlassDropdownMenuItem(
-                text = "跳转日期",
-                onClick = {
-                    onTodayMorePopupDismiss()
-                    onJumpToDate()
-                },
-                icon = {
-                    Icon(
-                        imageVector = MiuixIcons.Basic.FastForward,
-                        contentDescription = null,
-                        tint = MiuixTheme.colorScheme.onSurface,
-                        modifier = Modifier.size(23.dp)
-                    )
-                }
-            )
-            LiquidGlassDropdownMenuItem(
-                text = "课程管理",
-                onClick = {
-                    onTodayMorePopupDismiss()
-                    onCourseManage()
-                },
-                icon = {
-                    Icon(
-                        imageVector = MiuixIcons.Backup,
-                        contentDescription = null,
-                        tint = MiuixTheme.colorScheme.onSurface,
-                        modifier = Modifier.size(23.dp)
-                    )
-                }
-            )
-            LiquidGlassDropdownMenuItem(
-                text = "课表外观",
-                onClick = {
-                    onTodayMorePopupDismiss()
-                    onEnterCustomize()
-                },
-                icon = {
-                    Icon(
-                        imageVector = MiuixIcons.Background,
-                        contentDescription = null,
-                        tint = MiuixTheme.colorScheme.onSurface,
-                        modifier = Modifier.size(23.dp)
-                    )
-                }
-            )
-        }
-    }
-}
-
-@Composable
 fun CourseScheduleApp(
     privacyConsented: Boolean = true,
     // ── 平台注入（宿主提供；桌面/iOS 用默认空实现）─────────────────────────
@@ -1282,7 +1074,8 @@ fun CourseScheduleApp(
                     showClassroom = value.showClassroom,
                     showTeacher = value.showTeacher,
                     cardRefraction = value.cardRefraction,
-                    wallpaperBlur = value.wallpaperBlur
+                    wallpaperBlur = value.wallpaperBlur,
+                    showQuoteCard = value.showQuoteCard
                 )
             }
         }
@@ -1315,7 +1108,8 @@ fun CourseScheduleApp(
             showTeacher = AppearanceStore.getShowTeacher(),
             cardRefraction = AppearanceStore.getCardRefraction(),
             wallpaperIsLight = AppearanceStore.getWallpaperIsLight(),
-            wallpaperBlur = AppearanceStore.getWallpaperBlur()
+            wallpaperBlur = AppearanceStore.getWallpaperBlur(),
+            showQuoteCard = AppearanceStore.getShowQuoteCard()
         )
 
     // 加载单搭配；有伴生缓存则跳过 IO
@@ -1562,7 +1356,6 @@ fun CourseScheduleApp(
         lastAutoPage = autoAdvancePage
     }
 
-    var todaySelectedDayOfWeek by remember { mutableIntStateOf(currentDayOfWeek) }
     var todayIsToday by remember { mutableStateOf(true) }
     var scrollToTodayTrigger by remember { mutableIntStateOf(0) }
 
@@ -2344,21 +2137,11 @@ fun CourseScheduleApp(
     var switchCapturingSnapshot by remember { mutableStateOf(false) }
     // 改过课表则退出前重截主内容
     var scheduleChanged by remember { mutableStateOf(false) }
-    var showMorePopup by remember { mutableStateOf(false) }
-    var showTodayMorePopup by remember { mutableStateOf(false) }
-    // 按钮原地随菜单展开淡出，形成"按钮连贯变为菜单"的单一动画
-    val morePopupFraction = remember { Animatable(0f) }
-    val todayMorePopupFraction = remember { Animatable(0f) }
-    // 「更多」占位槽实测顶部位置（px，root 坐标）：布局期上报，菜单据此定位，避免首帧 inset 未到而偏位
-    val moreSlotTopPx = remember { mutableFloatStateOf(0f) }
-    // 占位槽在开洞/切页期间仍在顶层顶栏里，照常采样：关掉采样会让 moreSlotTopPx
-    // 冻结在进页前旧高度，菜单错位且仍可点。
-    val canSampleMoreSlot = !isWindowCutoutActive
-    // 顶栏滚动材质透明度；两个顶栏各自一份，避免切页时互相覆盖。
-    // 初值 0 而非 1f：真实值由 SideEffect 首帧写入，用 1f 会让「更多」先亮一帧。
-    val scheduleMaterialAlpha = remember { mutableStateOf(0f) }
-    val todayMaterialAlpha = remember { mutableFloatStateOf(0f) }
-    var todayJumpToDateTrigger by remember { mutableIntStateOf(0) }
+    // LocalAppRouter.current 是 @Composable 属性，须在组合层取、lambda 捕获
+    val courseManageRouter = LocalAppRouter.current
+    val openCourseManage: () -> Unit = {
+        courseManageRouter.navigate(AppRoute.CourseManage)
+    }
 
     val isViewingCurrentWeek = currentViewingWeek == currentWeek
 
@@ -2715,9 +2498,7 @@ fun CourseScheduleApp(
                                             scrollBehavior = scheduleScrollBehavior,
                                             blurResampleKey = railBlurResampleEpoch.intValue,
                                             blurSampleTrack = com.haooz.chedule.ui.components.tabletNavExpandSampleTrack,
-                                            onMoreSlotTop = { if (canSampleMoreSlot) moreSlotTopPx.value = it },
-                                            onMoreMaterial = { scheduleMaterialAlpha.value = it },
-                                            onMoreExpand = { showMorePopup = true },
+                                            onCourseManage = openCourseManage,
                                             gradientColorOverride = lockedSurface,
                                         )
                                     }
@@ -2805,10 +2586,7 @@ fun CourseScheduleApp(
                                     TodayTopBar(
                                         liquidGlassBackdrop = chromeBackdrop,
                                         navBarStyle = navBarStyle,
-                                        currentDayOfWeek = todaySelectedDayOfWeek,
-                                        isToday = todayIsToday,
                                         onBackToToday = { scrollToTodayTrigger++ },
-                                        onJumpToDate = { todayJumpToDateTrigger++ },
                                         onEnterCustomize = {
                                             coroutineScope.launch {
                                                 delay(200.milliseconds)
@@ -2819,76 +2597,15 @@ fun CourseScheduleApp(
                                         visible = showTodayTitle,
                                         blurResampleKey = railBlurResampleEpoch.intValue,
                                         blurSampleTrack = com.haooz.chedule.ui.components.tabletNavExpandSampleTrack,
-                                        onMoreSlotTop = { if (canSampleMoreSlot) moreSlotTopPx.value = it },
-                                        onMoreMaterial = { todayMaterialAlpha.value = it },
-                                        onMoreExpand = { showTodayMorePopup = true },
+                                        onCourseManage = openCourseManage,
                                         gradientColorOverride = lockedSurface,
                                     )
                                 }
                             }
                         }
                     },
-                    // popup 槽按组合顺序绘制：「更多」排在 MiuixPopupHost 之前，
-                    // 只高于顶栏按钮、低于弹窗，打开弹窗时会被遮罩一起压暗。
+                    // popup 槽是 Scaffold 最上层，弹窗宿主常驻
                     popupHost = {
-                        // 单个「更多」控件随所在顶栏一起滑动：与顶栏同一套 delta 公式；
-                        // 非当前页时整块被平移出屏幕，天然只留一份可见
-                        val scheduleMoreMenuOffset: () -> Offset = {
-                            val page = mainPagerState.currentPage
-                            val off = mainPagerState.currentPageOffsetFraction
-                            val delta = (if (isShiftMode) 0 else 1) - page - off
-                            if (navBarStyle == "rail") Offset(0f, delta * screenHPx)
-                            else Offset(delta * screenWPx, 0f)
-                        }
-                        val todayMoreMenuOffset: () -> Offset = {
-                            val page = mainPagerState.currentPage
-                            val off = mainPagerState.currentPageOffsetFraction
-                            // 排班模式下没有今日页，恒移出屏幕
-                            val delta = if (isShiftMode) -1f else (-page - off)
-                            if (navBarStyle == "rail") Offset(0f, delta * screenHPx)
-                            else Offset(delta * screenWPx, 0f)
-                        }
-                        // 不包 HostedOverlay：iOS 上浮层独立合成根拿不到主内容开洞缩放，
-                        // 「更多」会不随顶栏缩小、盖在课表外观页上仍可点；留在本槽与顶栏按钮同层。
-                        PageLockedTopBarTheme(wallpaperForcedDark) {
-                        // LocalAppRouter.current 必须在组合层取（onClick lambda 里取不到）
-                        val popupRouter = LocalAppRouter.current
-                        MorePopupMenus(
-                                    showMorePopup = showMorePopup,
-                                    onMorePopupDismiss = { showMorePopup = false },
-                                    onMorePopupExpand = { showMorePopup = true },
-                                    showTodayMorePopup = showTodayMorePopup,
-                                    onTodayMorePopupDismiss = { showTodayMorePopup = false },
-                                    onTodayMorePopupExpand = { showTodayMorePopup = true },
-                                    morePopupFraction = morePopupFraction,
-                                    todayMorePopupFraction = todayMorePopupFraction,
-                                    scheduleMenuOffset = scheduleMoreMenuOffset,
-                                    todayMenuOffset = todayMoreMenuOffset,
-                                    moreSlotTopPx = moreSlotTopPx,
-                                    scheduleMaterialAlpha = scheduleMaterialAlpha.value,
-                                    todayMaterialAlpha = todayMaterialAlpha.value,
-                                    liquidGlassBackdrop = liquidGlassBackdrop,
-                                    isShiftMode = isShiftMode,
-                                    // 平板（rail）右上角不显示「更多」
-                                    enabled = navBarStyle != "rail",
-                                    // 预测性返回由 LiquidGlassDropdownMenu 内部驱动同一个 fraction Animatable，
-                                    // 外面再 snapTo/animateTo 会和它互相 cancel，动画直接卡死。
-                                    onJumpWeek = { viewModel.showJumpWeekDialog() },
-                                    onCourseManage = {
-                                        popupRouter.navigate(
-                                            AppRoute.CourseManage
-                                        )
-                                    },
-                                    onEnterCustomize = {
-                                        coroutineScope.launch {
-                                            delay(200.milliseconds)
-                                            enterCustomizePage()
-                                        }
-                                    },
-                                    onJumpToDate = { todayJumpToDateTrigger++ },
-                                )
-                        }
-                        // 弹窗排在「更多」之后 → 始终盖在它之上，遮罩能压暗「更多」
                         MiuixPopupHost()
                     }
                 ) { paddingValues ->
@@ -3140,11 +2857,8 @@ fun CourseScheduleApp(
                                             navBarStyle = navBarStyle,
                                             onScrollYChanged = { _ -> },
                                             settingsScrollBehavior = todayScrollBehavior,
-                                            onSelectedDayChanged = { todaySelectedDayOfWeek = it },
                                             onSelectedDateChanged = { todayIsToday = it },
                                             scrollToTodayTrigger = scrollToTodayTrigger,
-                                            jumpToDateTrigger = todayJumpToDateTrigger,
-                                            onJumpToDateProcessed = { todayJumpToDateTrigger = 0 },
                                             wallpaperBitmap = if (showCustomizePage && !isWindowCutoutActive) originalWallpaperImage else wallpaperImage,
                                             wallpaperOffset = if (showCustomizePage && !isWindowCutoutActive) originalWallpaperOffset else wallpaperOffset,
                                             wallpaperScale = if (showCustomizePage && !isWindowCutoutActive) originalWallpaperScale else wallpaperScale,
@@ -3158,6 +2872,7 @@ fun CourseScheduleApp(
                                             liquidGlassBackdrop = liquidGlassBackdrop,
                                             showClassroom = displayAppearance.showClassroom,
                                             showTeacher = displayAppearance.showTeacher,
+                                            showQuoteCard = displayAppearance.showQuoteCard,
                                             onListScrollInProgress = { todayListScrollInProgress.value = it },
                                             // 今日助手卡留在 :androidApp（天气/定位/Geocoder），通过槽位注入
                                             todayAssistantCard = todayAssistantCard,
@@ -4744,6 +4459,9 @@ fun CourseScheduleApp(
                             AppearanceStore.saveWallpaperBlur(
                                 appearanceToSave.wallpaperBlur
                             )
+                            AppearanceStore.saveShowQuoteCard(
+                                appearanceToSave.showQuoteCard
+                            )
                         }
                         // 「应用」才写入偏好
                         pendingScheduleThemeMode?.let { mode ->
@@ -4872,24 +4590,6 @@ fun CourseScheduleApp(
                     },
                     hasWallpaper = wallpaperBitmap != null,
                     previewPage = if (selectedTab == 1) 1 else 0,
-                    onPreviewPageChange = { page ->
-                        val target = if (page == 1) 1 else 0
-                        if (selectedTab != target) {
-                            mainTabProgrammatic = true
-                            selectedTab = target
-                            coroutineScope.launch {
-                                try {
-                                    if (navBarStyle == "rail") {
-                                        mainPagerState.scrollToPage(target)
-                                    } else {
-                                        mainPagerState.animateMainTabTo(target)
-                                    }
-                                } finally {
-                                    mainTabProgrammatic = false
-                                }
-                            }
-                        }
-                    },
                 )
             }
         }
@@ -5592,33 +5292,25 @@ private fun SettingsTopBar(
 private fun TodayTopBar(
     liquidGlassBackdrop: com.kyant.backdrop.Backdrop?,
     navBarStyle: String,
-    currentDayOfWeek: Int,
-    isToday: Boolean = true,
     onBackToToday: () -> Unit = {},
-    onJumpToDate: () -> Unit = {},
     onEnterCustomize: () -> Unit = {},
+    onCourseManage: () -> Unit = {},
     scrollBehavior: SharedScrollBehavior? = null,
     visible: Boolean = true,
     blurResampleKey: Int = 0,
     blurSampleTrack: () -> Float = { 0f },
-    onMoreSlotTop: (Float) -> Unit = {},
-    onMoreMaterial: (Float) -> Unit = {},
-    onMoreExpand: () -> Unit = {},
     /** 渐变遮罩色；见 [ScheduleTopBar]。今日页同样跟壁纸锁色，需锁住避免切页跳色 */
     gradientColorOverride: Color? = null,
 ) {
     if (liquidGlassBackdrop == null) return
     val isTabletLiquidGlass = navBarStyle == "rail"
-    val hostedMore = LocalHostNavigation.current != null
     // 平板：标题避让侧栏后左对齐用的附加修饰符
     val titleRailPadding = if (isTabletLiquidGlass) {
         com.haooz.chedule.ui.components.tabletNavRailStartPadding().padding(start = 12.dp)
     } else {
         Modifier
     }
-    val dayOfWeekNames = listOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")
-    val dayOfWeekName = if (currentDayOfWeek in 1..7) dayOfWeekNames[currentDayOfWeek - 1] else ""
-    val titleText = if (isToday) "今天是$dayOfWeekName" else dayOfWeekName
+    val titleText = "今日课表"
 
     // 隐藏时 alpha=0 但仍测量，保证 currentHeightPx 启动即就位
     ProgressiveBlurTopBar(
@@ -5640,20 +5332,29 @@ private fun TodayTopBar(
             titleModifier = titleRailPadding,
             // 平板左上角不放返回按钮
             startAction = null,
-            onAlphaChanged = { backdrop, _ -> onMoreMaterial(backdrop) },
             endAction = { backdropAlpha, shadowAlpha ->
                 if (visible) {
                     if (isTabletLiquidGlass) {
-                        // pad：课程管理已在侧栏，右上角直接放跳转日期 + 课表外观
+                        // pad：课程管理已在侧栏，右上角只放课表外观
+                        LiquidTopBarButton(
+                            onClick = onEnterCustomize,
+                            backdrop = liquidGlassBackdrop,
+                            icon = MiuixIcons.Background,
+                            contentDescription = "课表外观",
+                            iconSize = 23.dp,
+                            backdropAlpha = backdropAlpha,
+                            shadowAlpha = shadowAlpha,
+                        )
+                    } else {
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             LiquidTopBarButton(
-                                onClick = onJumpToDate,
+                                onClick = onCourseManage,
                                 backdrop = liquidGlassBackdrop,
-                                icon = MiuixIcons.Basic.FastForward,
-                                contentDescription = "跳转日期",
+                                icon = MiuixIcons.Backup,
+                                contentDescription = "课程管理",
                                 iconSize = 23.dp,
                                 backdropAlpha = backdropAlpha,
                                 shadowAlpha = shadowAlpha,
@@ -5668,23 +5369,6 @@ private fun TodayTopBar(
                                 shadowAlpha = shadowAlpha,
                             )
                         }
-                    } else {
-                        // 「更多」按钮由下拉菜单组件自带（收起态即那颗按钮，唯一一份），这里只占位对齐
-                        Spacer(
-                            modifier = Modifier
-                                .size(42.dp)
-                                .then(
-                                    if (hostedMore) Modifier
-                                        .clickable(
-                                            interactionSource = remember { MutableInteractionSource() },
-                                            indication = null,
-                                            onClick = onMoreExpand,
-                                        )
-                                        .semantics { contentDescription = "更多" }
-                                    else Modifier
-                                )
-                                .onGloballyPositioned { onMoreSlotTop(it.positionInRoot().y) }
-                        )
                     }
                 }
             },

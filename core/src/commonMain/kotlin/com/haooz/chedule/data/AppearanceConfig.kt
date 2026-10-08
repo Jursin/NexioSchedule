@@ -29,7 +29,9 @@ data class AppearanceConfig(
     val showClassroom: Boolean = true,
     val showTeacher: Boolean = true,
     val cardRefraction: CardRefractionLevel = CardRefractionLevel.DEFAULT,
-    val wallpaperBlur: Boolean = false
+    val wallpaperBlur: Boolean = false,
+    /** 今日页语录卡片开关 */
+    val showQuoteCard: Boolean = true
 ) {
     companion object
 }
