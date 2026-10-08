@@ -3,6 +3,7 @@ package com.haooz.chedule.ui.components
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.EaseOut
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
@@ -33,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.dropShadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
@@ -116,6 +118,7 @@ fun LiquidBottomTabs(
     selectedTabIndex: () -> Int,
     onTabSelected: (index: Int) -> Unit,
     backdrop: Backdrop,
+    liquidGlass: Boolean = true,
     tabsCount: Int,
     modifier: Modifier = Modifier,
     containerHeight: Dp = 56.dp,
@@ -130,6 +133,9 @@ fun LiquidBottomTabs(
     val containerColor =
         if (isLightTheme) Color(0xFFFAFAFA).copy(0.6f)
         else Color(0xFF242424).copy(0.6f)
+    val solidContainerColor =
+        if (isLightTheme) Color.White
+        else Color(0xFF2D2D2D)
     val defaultEdgeLight = rememberDefaultEdgeLight(baseColor = containerColor)
 
     val tabsBackdrop = rememberLayerBackdrop()
@@ -224,21 +230,40 @@ fun LiquidBottomTabs(
         Row(
             Modifier
                 .graphicsLayer { translationX = panelOffset }
-                .drawBackdrop(
-                    backdrop = backdrop,
-                    shape = { ContinuousCapsule() },
-                    effects = panelEffects,
-                    highlight = null,
-                    layerBlock = {
-                        val progress = dampedDragAnimation.pressProgress
-                        val scale = lerp(1f, 1f + 16f.dp.toPx() / size.width, progress)
-                        scaleX = scale
-                        scaleY = scale
-                    },
-                    onDrawSurface = panelSurface
+                .then(
+                    if (liquidGlass) {
+                        Modifier
+                            .drawBackdrop(
+                                backdrop = backdrop,
+                                shape = { ContinuousCapsule() },
+                                effects = panelEffects,
+                                highlight = null,
+                                layerBlock = {
+                                    val progress = dampedDragAnimation.pressProgress
+                                    val scale = lerp(1f, 1f + 16f.dp.toPx() / size.width, progress)
+                                    scaleX = scale
+                                    scaleY = scale
+                                },
+                                onDrawSurface = panelSurface
+                            )
+                    } else {
+                        Modifier
+                            .dropShadow(
+                                shape = ContinuousCapsule(),
+                                shadow = androidx.compose.ui.graphics.shadow.Shadow(
+                                    radius = 10.dp,
+                                    color = Color.Black,
+                                    alpha = if (isLightTheme) 0.1f else 0.2f,
+                                ),
+                            )
+                            .background(solidContainerColor, ContinuousCapsule())
+                    }
                 )
-                .then(interactiveHighlight.modifier)
-                .edgeLight(shape = ContinuousCapsule(), edgeLight = defaultEdgeLight)
+                .then(if (liquidGlass) interactiveHighlight.modifier else Modifier)
+                .then(
+                    if (liquidGlass) Modifier.edgeLight(shape = ContinuousCapsule(), edgeLight = defaultEdgeLight)
+                    else Modifier
+                )
                 .height(containerHeight)
                 .fillMaxWidth()
                 .padding(4f.dp),
@@ -246,45 +271,46 @@ fun LiquidBottomTabs(
             content = content
         )
 
-        // 捕获层（透明）：按压时缩放，只通过玻璃滑块的 backdrop 透出
-        CompositionLocalProvider(
-            LocalLiquidBottomTabScale provides {
-                lerp(1f, 1.2f, dampedDragAnimation.pressProgress)
+        // 捕获层（透明）：按压时缩放，只通过玻璃滑块的 backdrop 透出；纯色态无消费方，整层省略
+        if (liquidGlass) {
+            CompositionLocalProvider(
+                LocalLiquidBottomTabScale provides {
+                    lerp(1f, 1.2f, dampedDragAnimation.pressProgress)
+                }
+            ) {
+                Row(
+                    Modifier
+                        .clearAndSetSemantics {}
+                        .alpha(0f)
+                        .layerBackdrop(tabsBackdrop)
+                        .graphicsLayer { translationX = panelOffset }
+                        .drawBackdrop(
+                            backdrop = backdrop,
+                            shape = { ContinuousCapsule() },
+                            effects = {
+                                val progress = dampedDragAnimation.pressProgress
+                                vibrancy()
+                                blur(8f.dp.toPx())
+                                lens(
+                                    24f.dp.toPx() * progress,
+                                    24f.dp.toPx() * progress
+                                )
+                            },
+                            highlight = {
+                                val progress = dampedDragAnimation.pressProgress
+                                Highlight.Default.copy(alpha = progress)
+                            },
+                            onDrawSurface = { drawRect(containerColor) }
+                        )
+                        .then(interactiveHighlight.modifier)
+                        .height(highlightHeight)
+                        .fillMaxWidth()
+                        .padding(horizontal = 4f.dp)
+                        .graphicsLayer(colorFilter = ColorFilter.tint(accentColor)),
+                    verticalAlignment = Alignment.CenterVertically,
+                    content = content
+                )
             }
-        ) {
-            Row(
-                Modifier
-                    .clearAndSetSemantics {}
-                    .alpha(0f)
-                    .layerBackdrop(tabsBackdrop)
-                    .graphicsLayer { translationX = panelOffset }
-                    .drawBackdrop(
-                        backdrop = backdrop,
-                        shape = { ContinuousCapsule() },
-                        effects = {
-                            val progress = dampedDragAnimation.pressProgress
-                            vibrancy()
-                            blur(8f.dp.toPx())
-                            lens(
-                                24f.dp.toPx() * progress,
-                                24f.dp.toPx() * progress
-                            )
-                        },
-                        highlight = {
-                            val progress = dampedDragAnimation.pressProgress
-                            Highlight.Default.copy(alpha = progress)
-                        },
-                        onDrawSurface = { drawRect(containerColor) }
-                    )
-                    .then(interactiveHighlight.modifier)
-
-                    .height(highlightHeight)
-                    .fillMaxWidth()
-                    .padding(horizontal = 4f.dp)
-                    .graphicsLayer(colorFilter = ColorFilter.tint(accentColor)),
-                verticalAlignment = Alignment.CenterVertically,
-                content = content
-            )
         }
 
         Box(
@@ -310,50 +336,61 @@ fun LiquidBottomTabs(
                         if (isLtr) dampedDragAnimation.value * tabWidth + panelOffset
                         else size.width - (dampedDragAnimation.value + 1f) * tabWidth + panelOffset
                 }
-                .drawBackdrop(
-                    // 页面 + 捕获层（底栏图标）+ 高光：高光排最后 → 叠在最上面，
-                    // 且它自身除光晕外全透明，不会遮掉前两层
-                    backdrop = rememberCombinedBackdrop(backdrop, tabsBackdrop, glowBackdrop),
-                    shape = { ContinuousCapsule() },
-                    downsampleScale = 1f,
-                    effects = {
-                        val progress = dampedDragAnimation.pressProgress
-                        lens(
-                            10f.dp.toPx() * progress,
-                            14f.dp.toPx() * progress,
-                            chromaticAberration = true
+                .then(
+                    if (liquidGlass) {
+                        Modifier.drawBackdrop(
+                            // 页面 + 捕获层（底栏图标）+ 高光：高光排最后 → 叠在最上面，
+                            // 且它自身除光晕外全透明，不会遮掉前两层
+                            backdrop = rememberCombinedBackdrop(backdrop, tabsBackdrop, glowBackdrop),
+                            shape = { ContinuousCapsule() },
+                            downsampleScale = 1f,
+                            effects = {
+                                val progress = dampedDragAnimation.pressProgress
+                                lens(
+                                    10f.dp.toPx() * progress,
+                                    14f.dp.toPx() * progress,
+                                    chromaticAberration = true
+                                )
+                            },
+                            highlight = {
+                                val progress = dampedDragAnimation.pressProgress
+                                Highlight.Default.copy(alpha = progress)
+                            },
+                            shadow = {
+                                val progress = dampedDragAnimation.pressProgress
+                                Shadow(alpha = progress)
+                            },
+                            innerShadow = {
+                                val progress = dampedDragAnimation.pressProgress
+                                InnerShadow(
+                                    radius = 8f.dp * progress,
+                                    alpha = progress
+                                )
+                            },
+                            layerBlock = {
+                                scaleX = dampedDragAnimation.scaleX
+                                scaleY = dampedDragAnimation.scaleY
+                                val velocity = dampedDragAnimation.velocity / 10f
+                                scaleX /= 1f - (velocity * 0.75f).fastCoerceIn(-0.2f, 0.2f)
+                                scaleY *= 1f - (velocity * 0.25f).fastCoerceIn(-0.2f, 0.2f)
+                            },
+                            onDrawSurface = {
+                                val progress = dampedDragAnimation.pressProgress
+                                drawRect(
+                                    if (isLightTheme) Color.Black.copy(0.06f)
+                                    else Color.White.copy(0.1f),
+                                    alpha = 1f - progress
+                                )
+                                drawRect(Color.Black.copy(alpha = 0.03f * progress))
+                            }
                         )
-                    },
-                    highlight = {
-                        val progress = dampedDragAnimation.pressProgress
-                        Highlight.Default.copy(alpha = progress)
-                    },
-                    shadow = {
-                        val progress = dampedDragAnimation.pressProgress
-                        Shadow(alpha = progress)
-                    },
-                    innerShadow = {
-                        val progress = dampedDragAnimation.pressProgress
-                        InnerShadow(
-                            radius = 8f.dp * progress,
-                            alpha = progress
-                        )
-                    },
-                    layerBlock = {
-                        scaleX = dampedDragAnimation.scaleX
-                        scaleY = dampedDragAnimation.scaleY
-                        val velocity = dampedDragAnimation.velocity / 10f
-                        scaleX /= 1f - (velocity * 0.75f).fastCoerceIn(-0.2f, 0.2f)
-                        scaleY *= 1f - (velocity * 0.25f).fastCoerceIn(-0.2f, 0.2f)
-                    },
-                    onDrawSurface = {
-                        val progress = dampedDragAnimation.pressProgress
-                        drawRect(
-                            if (isLightTheme) Color.Black.copy(0.06f)
-                            else Color.White.copy(0.1f),
-                            alpha = 1f - progress
-                        )
-                        drawRect(Color.Black.copy(alpha = 0.03f * progress))
+                    } else {
+                        Modifier
+                            .background(
+                                if (isLightTheme) Color.Black.copy(0.06f)
+                                else Color.White.copy(0.1f),
+                                ContinuousCapsule()
+                            )
                     }
                 )
                 .height(selectorHeight)
@@ -364,8 +401,8 @@ fun LiquidBottomTabs(
         Box(
             Modifier
                 .fillMaxSize()
-                // 按压高光的触发挂这层（覆盖整条栏），不挂滑块
-                .then(interactiveHighlight.gestureModifier)
+                // 按压高光的触发挂这层（覆盖整条栏），不挂滑块；纯色态无高光消费方，不挂手势
+                .then(if (liquidGlass) interactiveHighlight.gestureModifier else Modifier)
                 .pointerInput(tabsCount, tabWidth, isLtr, padPx) {
                     val touchSlop = viewConfiguration.touchSlop
                     awaitEachGesture {
