@@ -44,6 +44,8 @@ import com.haooz.chedule.uishared.resources.ic_widget_location
 import com.haooz.chedule.uishared.resources.icon_cloudy
 import com.haooz.chedule.uishared.resources.icon_cloudy_night
 import com.haooz.chedule.uishared.resources.icon_float_dirt
+import com.haooz.chedule.uishared.resources.icon_fog
+import com.haooz.chedule.uishared.resources.icon_fog_night
 import com.haooz.chedule.uishared.resources.icon_heavy_rain
 import com.haooz.chedule.uishared.resources.icon_heavy_snow
 import com.haooz.chedule.uishared.resources.icon_ice_rain
@@ -65,7 +67,8 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 // 中国天气网 type（中文）→ 图标
 private fun getWeatherIconRes(type: String, isNight: Boolean = false): DrawableResource = when {
     type.contains("冰雹") || type.contains("雷") -> Res.drawable.icon_t_storm
-    type.contains("雾") || type.contains("霾") || type.contains("浮尘") ||
+    type.contains("雾") -> if (isNight) Res.drawable.icon_fog_night else Res.drawable.icon_fog
+    type.contains("霾") || type.contains("浮尘") ||
         type.contains("扬沙") || type.contains("沙尘") -> Res.drawable.icon_float_dirt
     type.contains("冻雨") -> Res.drawable.icon_ice_rain
     type.contains("雨夹雪") -> Res.drawable.icon_light_snow
